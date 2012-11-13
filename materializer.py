@@ -170,30 +170,8 @@ class PrintConsumer(object):
         #
         self.stream_wrapped.d = self.data
         data = json.loads(self.data)
-        self.materializer.data_proc.add("95la69dh2VbG38357gTpjAdfdCXqOoivW2RW", data[0])
+#        self.materializer.data_proc.add("95la69dh2VbG38357gTpjAdfdCXqOoivW2RW", data[0])
 
-
-"""
-class StorageDB(object):
-    #Class for db interactions
-    def __init__(self):
-        self.db_name='op_conf.db'
-
-    def get_info(self, uuid):
-        #If uuid is not in db, add it and return info. Else load and return 
-        #info 
-        conn = sqlite3.connect(self.db_name)
-        c = conn.cursor()
-        c.execute("select * from streams where uuid='" + str(uuid) + "'")
-        l = c.fetchall()
-        if len(l) == 0:
-            c.execute("insert into streams values ('"+str(uuid)+"', '', '')")
-            print("added to db")
-            conn.commit()
-            conn.close()
-        else:
-            print(l[0])
-"""
 
 class StreamShelf(object):
     """Manages the shelf that stores stream op data"""
@@ -232,6 +210,6 @@ if __name__ == '__main__':
     republisher = RepublishListener()
     m.republisher = republisher
 
-#    threads.deferToThread(republisher.start)
+    threads.deferToThread(republisher.start)
 
     reactor.run()

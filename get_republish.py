@@ -10,6 +10,7 @@ class RepublishListener:
         self.conn = pycurl.Curl()
         self.conn.setopt(pycurl.URL, STREAM_URL)
         self.conn.setopt(pycurl.WRITEFUNCTION, self.on_receive)
+#        self.conn.setopt(pycurl.VERBOSE, 1)
         self.streamlist = None
 
     def start(self):
@@ -20,32 +21,21 @@ class RepublishListener:
         self.buffer += data
         if data.endswith("") and self.buffer.strip():
             stream_reading = json.loads(self.buffer)
+            print(stream_reading)
+            if not reactor.running:
+                sys.exit(0)
             self.buffer = ""
-            self.append_to_stream(stream_reading)
-        return None
-
-    def header(self, buf):
-        # Print header data to stderr
-        import sys
-        sys.stderr.write(buf)
-        # Returning None implies that all bytes were written
+            if self.streamlist:
+                print(self.streamlist)
+                print("printed streamlist")
+            else:
+                print("streamlist not updated")
+            if stream_reading[stream_reading.keys()[0]]['uuid'] in self.streamlist:
+                for reading in stream_reading[stream_reading.keys()[0]]['Readings']:
+                    self.streamlist[stream_reading[stream_reading.keys()[0]]['uuid']].new_live_pt(reading)
 
     def update_streamlist(self, streamlist):
         self.streamlist = streamlist
-
-    def append_to_stream(self, stream_reading):
-        """ Here, we want to append to data to the appropriate stream in 
-        streamlist """
-        print(stream_reading)
-        print("reactor:" + str(reactor.running))
-        if self.streamlist:
-            print(self.streamlist)
-            print("printed streamlist")
-        else:
-            print("streamlist not updated")
-        if stream_reading['uuid'] in self.streamlist:
-            self.streamlist[stream_reading['uuid']].new_live_pt(stream_reading['Readings'][0])
-
 
 
 if __name__ == '__main__':
