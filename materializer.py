@@ -1,6 +1,7 @@
 from twisted.internet import reactor, protocol, task, interfaces, threads
 from twisted.web.client import getPage
 from twisted.python import log
+from twisted.enterprise import adbapi
 from smap.drivers.expr import ExprDriver
 from smap.archiver.stream import *
 from zope.interface import implements
@@ -27,7 +28,7 @@ from twisted.protocols import basic
 ## happens
 
 LOCAL_URL = "http://localhost:8079/api/query?"
-LOCAL_QUERYSTR = "select *"
+LOCAL_QUERYSTR = "select * where not has Metadata/Extra/Operator"
 REAL_URL = "http://new.openbms.org/backend/api/query?"
 REAL_QUERYSTR = "select * where uuid like 'a2%'"
 URL_TO_USE = ""
@@ -54,6 +55,10 @@ class Materializer:
         self.republisher = None
         self.persist = StreamShelf()
         self.EXISTING_STREAMS = self.persist.read_shelf() #fill existing streams
+
+        db = adbapi.ConnectionPool('psycopg2', host='localhost', database='archiver', user='archiver', password='password')
+
+
         self.data_proc = SmapData(db)
         #with stored data
         #need to run through these at the start and process any unprocessed data
@@ -170,7 +175,9 @@ class PrintConsumer(object):
         #
         self.stream_wrapped.d = self.data
         data = json.loads(self.data)
-#        self.materializer.data_proc.add("95la69dh2VbG38357gTpjAdfdCXqOoivW2RW", data[0])
+        data = dict((('/' + v['uuid'], v) for v in data))
+        print(data)
+        self.materializer.data_proc.add(2, data)
 
 
 class StreamShelf(object):
