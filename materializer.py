@@ -37,6 +37,8 @@ else:
     URL_TO_USE = REAL_URL 
     QUERYSTR_TO_USE = REAL_QUERYSTR
 
+REPUBLISH_LISTEN_ON = False
+
 class Materializer:
     def __init__(self, existing_streams={}):
         """ Initialize our list of existing streams, we eventually want to
@@ -84,23 +86,25 @@ class Materializer:
                 pass
         print("found " + str(len(streams)) + " streams")
         print("added " + str(newstreams) + " new streams")
-        self.republisher.update_streamlist(self.EXISTING_STREAMS)
+        if REPUBLISH_LISTEN_ON:
+            self.republisher.update_streamlist(self.EXISTING_STREAMS)
         #print(self.republisher.streamlist)
         self.persist.write_shelf(self.EXISTING_STREAMS)
 
-    def process(self, stream_wrapped, op='subsample(300)'):
+    def process(self, stream_wrapped, op, start=1):
         """ Start processing historical data"""
         op_a = parse_opex(op)#get_operator(op, op_args)
-        d_spec = {'start': 100000, 'end': 1000000000000000000, 
-                                    'limit': [10000, 10000], 'method': 'data'}
+        # this will work at least until the year 33658
+        d_spec = {'start': start, 'end': 1000000000000000000, 
+                                    'limit': [0, 0], 'method': 'data'}
         cons = ProcessedDataConsumer(stream_wrapped)
         cons.materializer = self
+        cons.set_op(op)
         op_app = OperatorApplicator(op_a, d_spec, cons)
         op_app.DATA_DAYS = 100000000000
         streamid = fetch_streamid(stream_wrapped.uuid)
         op_app.start_processing(((True, [stream_wrapped.metadata]), (True, 
                                            [[stream_wrapped.uuid, streamid]])))
-        print("\n\n\n")            
 
 class StreamWrapper(object):
     """ Represents a stream, must hold uuid, other metadata, and unprocessed 
@@ -141,12 +145,20 @@ class ProcessedDataConsumer(object):
         self.stream_wrapped = stream_wrapped
         self.materializer = None
         self.data = ""
+        self.op = ""
 
     def registerProducer(self, producer, streaming):
         pass
     
     def unregisterProducer(self):
         pass
+
+    def set_op(self, opstr):
+        """Hacky fix for setting Metadata/Extra/Operator, replaces ( with - and
+        ) with nothing"""
+        self.op = opstr # store unmodified to self.op
+        opstr = opstr.replace("(", '-').replace(")", "")
+        self.opstr = opstr # for use in setting metadata
 
     def write(self, data):
         """ Store the data as we're receiving it. """
@@ -157,10 +169,31 @@ class ProcessedDataConsumer(object):
         check for built up data in self.stream_wrapped.received. If there is
         data, we need to run historical processing on it again, assuming that
         there is a sufficient amount."""
-        self.stream_wrapped.d = self.data
+        #self.stream_wrapped.d = self.data
         data = json.loads(self.data)
-        data = dict((('/' + v['uuid'], v) for v in data))
-        self.materializer.data_proc.add(2, data)
+        if len(data[0]["Readings"]) != 0:
+            # set metadata as necessary
+            data[0]['Metadata']['Extra']['Operator'] = self.opstr
+            data[0]['Metadata']['Extra']['SourceStream'] = self.stream_wrapped.uuid
+
+            # set path to reflect that this is a processed version of another stream
+            data[0]['Path'] = '/r/' + self.stream_wrapped.uuid + '/' + self.opstr
+
+            # special metadata so that powerdb takes special action for subsamples
+            if 'subsample' in self.op:
+                #subsamples have no SourceName so that they don't show up in powerdb
+                try:
+                    del(data[0]['Metadata']['SourceName'])
+                except:
+                    pass
+
+            #only update latest processed if something was actually computed
+            self.stream_wrapped.latest_processed = data[0]["Readings"][-1][0]
+            data = dict(((v['Path'], v) for v in data)) 
+            self.materializer.data_proc.add(2, data) #store back to db
+            if '300' in self.op:
+                print("will process again in 5 mins")
+                reactor.callLater(300, m.process, self.stream_wrapped, self.op, self.stream_wrapped.latest_processed)
         #### TODO, see docstring
 
 class StreamShelf(object):
@@ -198,9 +231,10 @@ if __name__ == '__main__':
     m = Materializer()
     a = task.LoopingCall(m.fetchExistingStreams)
     a.start(5)
-    republisher = RepublishListener()
-    m.republisher = republisher
+    if REPUBLISH_LISTEN_ON:
+        republisher = RepublishListener()
+        m.republisher = republisher
 
-    threads.deferToThread(republisher.start)
+        threads.deferToThread(republisher.start)
 
     reactor.run()
