@@ -41,16 +41,22 @@ class Materializer:
         including an 'all' field."""
 
         self.republisher = None
-        self.persist = StreamShelf()
-        self.EXISTING_STREAMS = self.persist.read_shelf() #fill existing streams
-        self.EXISTING_QUERIES = [QueryWrapper()] # load with one just for testing
+        self.stream_persist = StreamShelf('stream')
+        self.query_persist = StreamShelf('query')
+        self.EXISTING_STREAMS = self.stream_persist.read_shelf() #fill existing streams
+        self.EXISTING_QUERIES = self.query_persist.read_shelf()['query'] #[QueryWrapper()] # load with one just for testing
+
+
+        if self.EXISTING_QUERIES == []:
+            # load in default for testing
+            self.EXISTING_QUERIES += [QueryWrapper()]
 
         # setup db
         db = adbapi.ConnectionPool('psycopg2', host='localhost', 
                     database='archiver', user='archiver', password='password')
         self.data_proc = SmapData(db)
 
-        self.on_start() # restart anything that was processing when the 
+        #self.on_start() # restart anything that was processing when the 
                         # materializer shutdown last
 
 
@@ -65,6 +71,7 @@ class Materializer:
 
         for query in self.EXISTING_QUERIES:
             self.fetchForQuery(query)
+            print("(re)staring materialization of " + query.querystr)
             
     def fetchForQuery(self, query):
         d = getPage(URL_TO_USE, method='POST', postdata=query.querystr)
@@ -105,7 +112,8 @@ class Materializer:
             self.republisher.update_streamlist(self.EXISTING_STREAMS)
 
         # write back to shelf after each run
-        self.persist.write_shelf(self.EXISTING_STREAMS)
+        self.stream_persist.write_shelf(self.EXISTING_STREAMS)
+        self.query_persist.write_shelf({'query': self.EXISTING_QUERIES})
 
     def process(self, streams_wrapped, op, start=1):
         """ Apply op to streams in streams_wrapped from start to latest"""
@@ -132,7 +140,7 @@ class ProcessedDataConsumer(object):
 
     def __init__(self, streams_wrapped, op):
         #hacky fix, change later
-        self.stream_wrapped = streams_wrapped[0]
+        self.streams_wrapped = streams_wrapped
         self.materializer = None
         self.data = ""
         self.op = op
@@ -157,10 +165,13 @@ class ProcessedDataConsumer(object):
         if len(data[0]["Readings"]) != 0:
             # set metadata as necessary
             data[0]['Metadata']['Extra']['Operator'] = self.op.meta_op
-            data[0]['Metadata']['Extra']['SourceStream'] = self.stream_wrapped.uuid
+            data[0]['Metadata']['Extra']['SourceStream'] = self.streams_wrapped[0].uuid
 
             # set path to reflect that this is a processed version of another stream
-            data[0]['Path'] = '/r/' + self.stream_wrapped.uuid + '/' + self.op.meta_op
+            data[0]['Path'] = '/r/' + self.streams_wrapped[0].uuid + '/' + self.op.meta_op
+
+            if 'SourceName' not in data[0]['Metadata'].keys():
+                data[0]['Metadata']['SourceName'] = 'awesome'
 
             # special metadata so that powerdb takes special action for subsamples
             if 'subsample' in self.op.opstr:
@@ -171,18 +182,19 @@ class ProcessedDataConsumer(object):
                     pass
 
             #only update latest processed if something was actually computed
-            self.stream_wrapped.latest_processed = data[0]["Readings"][-1][0]
+            self.streams_wrapped[0].latest_processed = data[0]["Readings"][-1][0]
             data = dict(((v['Path'], v) for v in data)) 
             self.materializer.data_proc.add(2, data) #store back to db
+
             if self.op.refresh_time is not None and self.op.refresh_time > 0:
-                reactor.callLater(self.op.refresh_time, m.process, [self.stream_wrapped], 
-                                      self.op, self.stream_wrapped.latest_processed)
+                reactor.callLater(self.op.refresh_time, m.process, self.streams_wrapped, 
+                                      self.op, self.streams_wrapped[0].latest_processed)
 
 
 class StreamShelf(object):
     """Manages the shelf that stores stream op data"""
-    def __init__(self):
-        self.shelf_file = 'stream_shelf'
+    def __init__(self, namefront):
+        self.shelf_file = namefront+'_shelf'
         
     def read_shelf(self):
         s = shelve.open(self.shelf_file)
@@ -191,6 +203,8 @@ class StreamShelf(object):
         for key in s.keys():
             exist[str(key)] = s[str(key)]
         s.close()
+        if 'query' in self.shelf_file and exist == {}:
+            return {'query': []}
         return exist
 
     def write_shelf(self, existing):
@@ -205,6 +219,7 @@ if __name__ == '__main__':
     # start the twisted logger, takes everything from stdout too
     log.startLogging(sys.stdout) 
     m = Materializer()
+    reactor.callLater(1, m.on_start)
     a = task.LoopingCall(m.fetchExistingStreams)
     a.start(5)
     if REPUBLISH_LISTEN_ON:

@@ -1,5 +1,6 @@
 *.py[cod]
 stream_shelf
+query_shelf
 olds/
 py.py
 
