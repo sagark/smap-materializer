@@ -67,7 +67,7 @@ class Materializer:
         self.EXISTING_MULTIS = MultiQueryWrapper()
 
 
-    def bootstrap(self):
+    def on_start(self):
         for multiquery in self.EXISTING_MULTIS:
             d = getPage(REAL_URL, method='POST', postdata=multiquery.querystr)
             
@@ -104,15 +104,15 @@ class Materializer:
 
     def process(self, streams_wrapped, op, start=1):
         """ Apply op to streams in streams_wrapped from start to latest"""
-        op_a = parse_opex(op)
+        op_a = parse_opex(op.opstr)
 
         # this will work at least until the year 33658
         d_spec = {'start': start, 'end': 1000000000000000000, 
                                     'limit': [0, 0], 'method': 'data'}
 
-        cons = ProcessedDataConsumer(streams_wrapped)
+        cons = ProcessedDataConsumer(streams_wrapped, op)
         cons.materializer = self
-        cons.set_op(op)
+        #cons.set_op(op)
         op_app = OperatorApplicator(op_a, d_spec, cons)
         op_app.DATA_DAYS = 100000000000
         #streamid = fetch_streamid(stream_wrapped.uuid)
@@ -125,24 +125,17 @@ class Materializer:
 class ProcessedDataConsumer(object):
     implements(interfaces.IFinishableConsumer)
 
-    def __init__(self, streams_wrapped):
+    def __init__(self, streams_wrapped, op):
         self.stream_wrapped = streams_wrapped[0]
         self.materializer = None
         self.data = ""
-        self.op = ""
+        self.op = op
 
     def registerProducer(self, producer, streaming):
         pass
     
     def unregisterProducer(self):
         pass
-
-    def set_op(self, opstr):
-        """Hacky fix for setting Metadata/Extra/Operator, replaces ( with - and
-        ) with nothing"""
-        self.op = opstr # store unmodified to self.op
-        opstr = opstr.replace("(", '-').replace(")", "")
-        self.opstr = opstr # for use in setting metadata
 
     def write(self, data):
         """ Store the data as we're receiving it. """
@@ -157,14 +150,14 @@ class ProcessedDataConsumer(object):
         data = json.loads(self.data)
         if len(data[0]["Readings"]) != 0:
             # set metadata as necessary
-            data[0]['Metadata']['Extra']['Operator'] = self.opstr
+            data[0]['Metadata']['Extra']['Operator'] = self.op.meta_op
             data[0]['Metadata']['Extra']['SourceStream'] = self.stream_wrapped.uuid
 
             # set path to reflect that this is a processed version of another stream
-            data[0]['Path'] = '/r/' + self.stream_wrapped.uuid + '/' + self.opstr
+            data[0]['Path'] = '/r/' + self.stream_wrapped.uuid + '/' + self.op.meta_op
 
             # special metadata so that powerdb takes special action for subsamples
-            if 'subsample' in self.op:
+            if 'subsample' in self.op.opstr:
                 #subsamples have no SourceName so that they don't show up in powerdb
                 try:
                     del(data[0]['Metadata']['SourceName'])
@@ -175,13 +168,9 @@ class ProcessedDataConsumer(object):
             self.stream_wrapped.latest_processed = data[0]["Readings"][-1][0]
             data = dict(((v['Path'], v) for v in data)) 
             self.materializer.data_proc.add(2, data) #store back to db
-            if '300' in self.op:
-                print("will process again in 5 mins")
-                reactor.callLater(300, m.process, [self.stream_wrapped], self.op, self.stream_wrapped.latest_processed)
-        #### TODO, see docstring
-
-
-
+            if self.op.refresh_time is not None and self.op.refresh_time > 0:
+                reactor.callLater(self.op.refresh_time, m.process, [self.stream_wrapped], 
+                                      self.op, self.stream_wrapped.latest_processed)
 
 
 class StreamShelf(object):

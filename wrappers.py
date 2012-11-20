@@ -1,6 +1,16 @@
 """Wrappers for use by the materializer"""
 
+class OpWrapper(object):
+    """ Represents a smap operator (or a composition of operators) """
+    def __init__(self, opstr, reftime):
+        self.opstr = opstr # op that parse_opex can understand
+        self.meta_op = "" # str version of op for use in metadata, set by metaize
+        self.metaize()
+        self.refresh_time = reftime # time between updates in seconds, e.g. 300 for subsample(300)
 
+    def metaize(self):
+        """Make metadata version of opstr"""
+        self.meta_op = self.opstr.replace("(", '-').replace(")", "")
 
 
 class StreamWrapper(object):
@@ -11,7 +21,8 @@ class StreamWrapper(object):
         self.metadata = meta
         self.received = []
         self.latest_processed = 0
-        self.ops = ['subsample(300)', 'subsample(3600)'] # every stream has at least subsample300
+        self.ops = [OpWrapper('subsample(300)', 300), OpWrapper('subsample(3600)', 3600)] 
+        # every stream has at least subsample300 and 3600
     
     def new_live_pt(self, pt):
         """ Add a point to the list of unprocessed data."""
