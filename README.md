@@ -14,7 +14,7 @@ Needs to be implemented:
 * Load from DB instead of shelves
 * What happens if a stream that we're computing for goes down?
 * Republisher (I'm not really sure if this needs to be used... seems simpler just to keep pulling directly from readingdb and keep track of latest time + polling)
-
+* Propagating metadata
 
 How to use:
 * Adding a stream
