@@ -63,17 +63,18 @@ class Materializer:
                                       op, stream_list[0].latest_processed)
                 print("restarting " + op.opstr + " for stream " + stream)
 
-
-#        for multiquery in self.EXISTING_MULTIS:
-#            d = getPage(REAL_URL, method='POST', postdata=multiquery.querystr)
+        for query in self.EXISTING_QUERIES:
+            self.fetchForQuery(query)
             
-    def fetchForQuery(self, querystr):
-        d = getPage(URL_TO_USE, method='POST', postdata=querystr)
-        d.addCallback(self.prepProcessCall)
+    def fetchForQuery(self, query):
+        d = getPage(URL_TO_USE, method='POST', postdata=query.querystr)
+        d.addCallback(self.prepProcessCall,op=query.op)
         
 
-    def prepProcessCall(self, stream_list):
+    def prepProcessCall(self, stream_list, op):
+        stream_list = json.loads(stream_list)
         streams_wrapped = [StreamWrapper(stream['uuid'], stream) for stream in stream_list]
+        self.process(streams_wrapped, op) 
 
 
     def fetchExistingStreams(self):
