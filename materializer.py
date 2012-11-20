@@ -9,14 +9,21 @@ from get_republish import RepublishListener
 from smap.archiver.queryparse import parse_opex
 from smap.archiver.data import SmapData
 from smap.core import Timeseries
+
+# materializer specific imports
+from wrappers import *
+from mat_utils import *
+
 import threading
 import json
 import sys
-import psycopg2
 import readingdb
 import shelve
 import signal
+
 readingdb.db_setup('localhost', 4242)
+
+
 #maybe give this an api so that users can request materialization from a 
 # the server without 
 #having to run their own smap?
@@ -46,7 +53,6 @@ class Materializer:
         information about which operators should be applied to which drivers
         including an 'all' field."""
 
-        self.STREAMS_TO_OPS = {'all': None}
         self.EXISTING_STREAMS = existing_streams
         self.republisher = None
         self.persist = StreamShelf()
@@ -59,85 +65,65 @@ class Materializer:
         #with stored data
         #need to run through these at the start and process any unprocessed data
 
+        self.EXISTING_MULTIS = MultiQueryWrapper()
+
+
+    def bootstrap(self):
+        for multiquery in self.EXISTING_MULTIS:
+            d = getPage(REAL_URL, method='POST', postdata=multiquery.querystr)
+            
 
     def fetchExistingStreams(self):
         d = getPage(URL_TO_USE, method='POST', postdata=QUERYSTR_TO_USE)
-        d.addCallback(self.check_and_add)
+        d.addCallback(self.periodic_check_and_add)
         # here, need to add polling republish
 
-    def check_and_add(self, stream_list):
+    def periodic_check_and_add(self, stream_list):
         """ Compares against [data structure here] of streams to detect new streams,
         starts desired operators on new streams."""
         streams = json.loads(stream_list)
-        #print(streams)
         newstreams = 0
         for stream in streams:
             if stream['uuid'] not in self.EXISTING_STREAMS:
                 # check if the uuid is in EXISTING_STREAMS. If it isn't add it
                 # and then use its tags to determine if we need to start applying
-                # ops
+                # ops, start processing historical
                 self.EXISTING_STREAMS[stream['uuid']] = StreamWrapper(stream['uuid'], stream)
                 print("added and initializing processing" + str(stream))
                 for op in self.EXISTING_STREAMS[stream['uuid']].ops:
                     self.process([self.EXISTING_STREAMS[stream['uuid']]], op)
                 newstreams += 1
-            else:
-                #print("stream already has processing tasks")
-                pass
-        print("found " + str(len(streams)) + " streams")
-        print("added " + str(newstreams) + " new streams")
+
+        print("Found " + str(len(streams)) + " total streams")
+        print("Added " + str(newstreams) + " new streams")
+
         if REPUBLISH_LISTEN_ON:
             self.republisher.update_streamlist(self.EXISTING_STREAMS)
-        #print(self.republisher.streamlist)
+
+        # write back to shelf after each run
         self.persist.write_shelf(self.EXISTING_STREAMS)
 
     def process(self, streams_wrapped, op, start=1):
-        """ Start processing historical data"""
-        op_a = parse_opex(op)#get_operator(op, op_args)
+        """ Apply op to streams in streams_wrapped from start to latest"""
+        op_a = parse_opex(op)
+
         # this will work at least until the year 33658
         d_spec = {'start': start, 'end': 1000000000000000000, 
                                     'limit': [0, 0], 'method': 'data'}
+
         cons = ProcessedDataConsumer(streams_wrapped)
         cons.materializer = self
         cons.set_op(op)
         op_app = OperatorApplicator(op_a, d_spec, cons)
         op_app.DATA_DAYS = 100000000000
         #streamid = fetch_streamid(stream_wrapped.uuid)
+
         metas = [getattr(stream, 'metadata') for stream in streams_wrapped]
         ids = [[getattr(stream, 'uuid'), fetch_streamid(getattr(stream,'uuid'))] for stream in streams_wrapped]
         op_app.start_processing(((True, metas), (True, ids)))
 
-class StreamWrapper(object):
-    """ Represents a stream, must hold uuid, other metadata, and unprocessed 
-    live data"""
-    def __init__(self, uuid, meta):
-        self.uuid = uuid
-        self.metadata = meta
-        self.received = []
-        self.latest_processed = 0
-        self.ops = ['subsample(300)', 'subsample(3600)'] # every stream has at least subsample300
-    
-    def new_live_pt(self, pt):
-        """ Add a point to the list of unprocessed data."""
-        self.received.append(pt)
-        print("added: " + str(pt))
 
-    @property
-    def recent_hist(self):
-        """ Return data obtained from republish, which we will continue to 
-        process as if it were historical."""
-        if (len(self.received) == 0):
-            return None # if there is no recent hist, return None
-        self.latest_processed = self.received[-1][0]
-        out = self.received
-        self.received = []
-        return out
 
-    def __str__(self):
-        return uuid
-
-    def __eq__(self, other):
-        return str(self) == str(other)
 
 class ProcessedDataConsumer(object):
     implements(interfaces.IFinishableConsumer)
@@ -197,6 +183,10 @@ class ProcessedDataConsumer(object):
                 reactor.callLater(300, m.process, [self.stream_wrapped], self.op, self.stream_wrapped.latest_processed)
         #### TODO, see docstring
 
+
+
+
+
 class StreamShelf(object):
     """Manages the shelf that stores stream op data"""
     def __init__(self):
@@ -218,13 +208,6 @@ class StreamShelf(object):
         for key in existing:
             s[str(key)] = existing[str(key)]
         s.close()
-
-def fetch_streamid(uuid):
-    conn = psycopg2.connect(database="archiver", host="localhost", 
-                            user="archiver", password="password")
-    cur = conn.cursor()
-    cur.execute("SELECT * FROM stream where uuid = '" + uuid + "';")
-    return cur.fetchone()[0]
 
 if __name__ == '__main__':
     # start the twisted logger, takes everything from stdout too
