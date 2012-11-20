@@ -47,7 +47,7 @@ class StreamWrapper(object):
         return str(self) == str(other)
 
 
-class MultiQueryWrapper(object):
+class QueryWrapper(object):
     """ Represents a query that requires multiple streams for processing """
     def __init__(self):
         """ Sample default is the whole campus query used by campenport """

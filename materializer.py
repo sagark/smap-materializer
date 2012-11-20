@@ -27,46 +27,32 @@ import shelve
 
 # config
 readingdb.db_setup('localhost', 4242)
-LOCAL_URL = "http://localhost:8079/api/query?"
-LOCAL_QUERYSTR = "select * where not has Metadata/Extra/Operator"
-REAL_URL = "http://new.openbms.org/backend/api/query?"
-REAL_QUERYSTR = "select * where uuid like 'a2%'"
-URL_TO_USE = ""
-QUERYSTR_TO_USE = ""
-
-USE_LOCAL = True
-if USE_LOCAL:
-    URL_TO_USE = LOCAL_URL
-    QUERYSTR_TO_USE = LOCAL_QUERYSTR
-else:
-    URL_TO_USE = REAL_URL 
-    QUERYSTR_TO_USE = REAL_QUERYSTR
+URL_TO_USE = "http://localhost:8079/api/query?"
+QUERYSTR_TO_USE = "select * where not has Metadata/Extra/Operator"
 
 REPUBLISH_LISTEN_ON = False
 # end config
 
 class Materializer:
-    def __init__(self, existing_streams={}):
+    def __init__(self):
         """ Initialize our list of existing streams, we eventually want to
         allow this to be loaded from file. Additionally, here we load 
         information about which operators should be applied to which drivers
         including an 'all' field."""
 
-        self.EXISTING_STREAMS = existing_streams
         self.republisher = None
         self.persist = StreamShelf()
         self.EXISTING_STREAMS = self.persist.read_shelf() #fill existing streams
+        self.EXISTING_QUERIES = [QueryWrapper()] # load with one just for testing
 
+        # setup db
         db = adbapi.ConnectionPool('psycopg2', host='localhost', 
                     database='archiver', user='archiver', password='password')
         self.data_proc = SmapData(db)
 
-        #with stored data
-        #need to run through these at the start and process any unprocessed data
+        self.on_start() # restart anything that was processing when the 
+                        # materializer shutdown last
 
-        self.on_start() # start running stuff on new start
-
-        #self.EXISTING_MULTIS = MultiQueryWrapper()
 
 
     def on_start(self):
@@ -75,12 +61,20 @@ class Materializer:
             for op in stream_list[0].ops:
                 reactor.callLater(op.refresh_time, self.process, stream_list, 
                                       op, stream_list[0].latest_processed)
-            print("starting calculation for stream " + stream)
+                print("restarting " + op.opstr + " for stream " + stream)
 
 
 #        for multiquery in self.EXISTING_MULTIS:
 #            d = getPage(REAL_URL, method='POST', postdata=multiquery.querystr)
             
+    def fetchForQuery(self, querystr):
+        d = getPage(URL_TO_USE, method='POST', postdata=querystr)
+        d.addCallback(self.prepProcessCall)
+        
+
+    def prepProcessCall(self, stream_list):
+        streams_wrapped = [StreamWrapper(stream['uuid'], stream) for stream in stream_list]
+
 
     def fetchExistingStreams(self):
         d = getPage(URL_TO_USE, method='POST', postdata=QUERYSTR_TO_USE)
