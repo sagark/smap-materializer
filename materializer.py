@@ -1,11 +1,15 @@
+#!/usr/bin/python
+
+# twisted/related imports
+from zope.interface import implements
 from twisted.internet import reactor, protocol, task, interfaces, threads
 from twisted.web.client import getPage
 from twisted.python import log
 from twisted.enterprise import adbapi
+
+# smap imports
 from smap.drivers.expr import ExprDriver
 from smap.archiver.stream import *
-from zope.interface import implements
-from get_republish import RepublishListener
 from smap.archiver.queryparse import parse_opex
 from smap.archiver.data import SmapData
 from smap.core import Timeseries
@@ -14,21 +18,15 @@ from smap.core import Timeseries
 from wrappers import *
 from mat_utils import *
 
-import threading
+# misc imports
 import json
 import sys
 import readingdb
 import shelve
-import signal
 
+
+# config
 readingdb.db_setup('localhost', 4242)
-
-
-#maybe give this an api so that users can request materialization from a 
-# the server without 
-#having to run their own smap?
-from twisted.protocols import basic
-
 LOCAL_URL = "http://localhost:8079/api/query?"
 LOCAL_QUERYSTR = "select * where not has Metadata/Extra/Operator"
 REAL_URL = "http://new.openbms.org/backend/api/query?"
@@ -45,6 +43,7 @@ else:
     QUERYSTR_TO_USE = REAL_QUERYSTR
 
 REPUBLISH_LISTEN_ON = False
+# end config
 
 class Materializer:
     def __init__(self, existing_streams={}):
@@ -121,8 +120,6 @@ class Materializer:
         metas = [getattr(stream, 'metadata') for stream in streams_wrapped]
         ids = [[getattr(stream, 'uuid'), fetch_streamid(getattr(stream,'uuid'))] for stream in streams_wrapped]
         op_app.start_processing(((True, metas), (True, ids)))
-
-
 
 
 class ProcessedDataConsumer(object):
