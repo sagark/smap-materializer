@@ -64,12 +64,22 @@ class Materializer:
         #with stored data
         #need to run through these at the start and process any unprocessed data
 
-        self.EXISTING_MULTIS = MultiQueryWrapper()
+        self.on_start() # start running stuff on new start
+
+        #self.EXISTING_MULTIS = MultiQueryWrapper()
 
 
     def on_start(self):
-        for multiquery in self.EXISTING_MULTIS:
-            d = getPage(REAL_URL, method='POST', postdata=multiquery.querystr)
+        for stream in self.EXISTING_STREAMS:
+            stream_list = [self.EXISTING_STREAMS[stream]]
+            for op in stream_list[0].ops:
+                reactor.callLater(op.refresh_time, self.process, stream_list, 
+                                      op, stream_list[0].latest_processed)
+            print("starting calculation for stream " + stream)
+
+
+#        for multiquery in self.EXISTING_MULTIS:
+#            d = getPage(REAL_URL, method='POST', postdata=multiquery.querystr)
             
 
     def fetchExistingStreams(self):
@@ -126,6 +136,7 @@ class ProcessedDataConsumer(object):
     implements(interfaces.IFinishableConsumer)
 
     def __init__(self, streams_wrapped, op):
+        #hacky fix, change later
         self.stream_wrapped = streams_wrapped[0]
         self.materializer = None
         self.data = ""

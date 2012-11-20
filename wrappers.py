@@ -50,9 +50,10 @@ class StreamWrapper(object):
 class MultiQueryWrapper(object):
     """ Represents a query that requires multiple streams for processing """
     def __init__(self):
-        self.op = "nansum(axis=1) < paste < window(first, field='minute', width=15) < units"
+        """ Sample default is the whole campus query used by campenport """
+        self.op = OpWrapper("nansum(axis=1) < paste < window(first, field="
+                                        "'minute', width=15) < units", 15*60)
         self.querystr = "select * where (Metadata/Extra/System = 'total' or Metadata/Extra/System = 'electric') and ((Properties/UnitofMeasure = 'kW' or Properties/UnitofMeasure = 'Watts') or Properties/UnitofMeasure = 'W') and not Metadata/Extra/Operator like 'sum%' and not Path like '%demand'"
         self.latest_processed = 0
-        self.repeat_time = 15*60
 
 
