@@ -79,7 +79,7 @@ class Materializer:
                 self.EXISTING_STREAMS[stream['uuid']] = StreamWrapper(stream['uuid'], stream)
                 print("added and initializing processing" + str(stream))
                 for op in self.EXISTING_STREAMS[stream['uuid']].ops:
-                    self.process(self.EXISTING_STREAMS[stream['uuid']], op)
+                    self.process([self.EXISTING_STREAMS[stream['uuid']]], op)
                 newstreams += 1
             else:
                 #print("stream already has processing tasks")
@@ -91,20 +91,21 @@ class Materializer:
         #print(self.republisher.streamlist)
         self.persist.write_shelf(self.EXISTING_STREAMS)
 
-    def process(self, stream_wrapped, op, start=1):
+    def process(self, streams_wrapped, op, start=1):
         """ Start processing historical data"""
         op_a = parse_opex(op)#get_operator(op, op_args)
         # this will work at least until the year 33658
         d_spec = {'start': start, 'end': 1000000000000000000, 
                                     'limit': [0, 0], 'method': 'data'}
-        cons = ProcessedDataConsumer(stream_wrapped)
+        cons = ProcessedDataConsumer(streams_wrapped)
         cons.materializer = self
         cons.set_op(op)
         op_app = OperatorApplicator(op_a, d_spec, cons)
         op_app.DATA_DAYS = 100000000000
-        streamid = fetch_streamid(stream_wrapped.uuid)
-        op_app.start_processing(((True, [stream_wrapped.metadata]), (True, 
-                                           [[stream_wrapped.uuid, streamid]])))
+        #streamid = fetch_streamid(stream_wrapped.uuid)
+        metas = [getattr(stream, 'metadata') for stream in streams_wrapped]
+        ids = [[getattr(stream, 'uuid'), fetch_streamid(getattr(stream,'uuid'))] for stream in streams_wrapped]
+        op_app.start_processing(((True, metas), (True, ids)))
 
 class StreamWrapper(object):
     """ Represents a stream, must hold uuid, other metadata, and unprocessed 
@@ -141,8 +142,8 @@ class StreamWrapper(object):
 class ProcessedDataConsumer(object):
     implements(interfaces.IFinishableConsumer)
 
-    def __init__(self, stream_wrapped):
-        self.stream_wrapped = stream_wrapped
+    def __init__(self, streams_wrapped):
+        self.stream_wrapped = streams_wrapped[0]
         self.materializer = None
         self.data = ""
         self.op = ""
@@ -193,7 +194,7 @@ class ProcessedDataConsumer(object):
             self.materializer.data_proc.add(2, data) #store back to db
             if '300' in self.op:
                 print("will process again in 5 mins")
-                reactor.callLater(300, m.process, self.stream_wrapped, self.op, self.stream_wrapped.latest_processed)
+                reactor.callLater(300, m.process, [self.stream_wrapped], self.op, self.stream_wrapped.latest_processed)
         #### TODO, see docstring
 
 class StreamShelf(object):
