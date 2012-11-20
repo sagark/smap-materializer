@@ -53,7 +53,7 @@ class QueryWrapper(object):
         """ Sample default is the whole campus query used by campenport """
         self.op = OpWrapper("nansum(axis=1) < paste < window(first, field="
                                         "'minute', width=15) < units", 10)
-        self.querystr = "select * "
+        self.querystr = "select * where not has Metadata/Extra/Operator"
         """where (Metadata/Extra/System = 'total' or Metadata/Extra/System = 'electric') and ((Properties/UnitofMeasure = 'kW' or Properties/UnitofMeasure = 'Watts') or Properties/UnitofMeasure = 'W') and not Metadata/Extra/Operator like 'sum%' and not Path like '%demand'"""
         self.latest_processed = 0
 
