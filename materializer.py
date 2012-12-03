@@ -49,6 +49,9 @@ class Materializer:
         if self.EXISTING_QUERIES == []:
             # load in default for testing
             self.EXISTING_QUERIES += [QueryWrapper()]
+            self.query_persist.write_shelf({'query': self.EXISTING_QUERIES})
+            self.query_persist = StreamShelf('query')
+            self.EXISTING_QUERIES = self.query_persist.read_shelf()['query'] #[QueryWrapper()] # load with one just for testing
 
         # setup db
         db = adbapi.ConnectionPool('psycopg2', host='localhost', 
@@ -215,11 +218,8 @@ if __name__ == '__main__':
     # start the twisted logger, takes everything from stdout too
     log.startLogging(sys.stdout) 
     m = Materializer()
-    reactor.callLater(1, m.on_start)
+    #reactor.callLater(10, m.on_start)
+    m.on_start()
     a = task.LoopingCall(m.fetchExistingStreams)
     a.start(5)
-    if REPUBLISH_LISTEN_ON:
-        republisher = RepublishListener()
-        m.republisher = republisher
-        threads.deferToThread(republisher.start)
     reactor.run()
