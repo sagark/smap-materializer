@@ -9,6 +9,7 @@ Currently works:
 * Setting proper metadata so that powerdb recognizes these as subsample streams (i.e. this is now capable of being actually deployed at least for auto-subsampling, barring any stability issues)
 * Graceful restart after failure (don't have to recompute everything, just pickup from where we left off)
 * "Query" focused operators (e.g. queries used by berkeley.openbms, lots of streams for one set of operators)
+* Output metadata allows for powerdb to automatically recognize substreams
 
 Needs to be implemented:
 * Load from DB instead of shelves
