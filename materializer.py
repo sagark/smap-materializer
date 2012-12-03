@@ -10,7 +10,7 @@ from twisted.enterprise import adbapi
 # smap imports
 from smap.drivers.expr import ExprDriver
 from smap.archiver.stream import *
-from smap.archiver.queryparse import parse_opex
+from smap.archiver.queryparse import parse_opex, QueryParser
 from smap.archiver.data import SmapData
 from smap.core import Timeseries
 
@@ -46,7 +46,6 @@ class Materializer:
         self.EXISTING_STREAMS = self.stream_persist.read_shelf() #fill existing streams
         self.EXISTING_QUERIES = self.query_persist.read_shelf()['query'] #[QueryWrapper()] # load with one just for testing
 
-
         if self.EXISTING_QUERIES == []:
             # load in default for testing
             self.EXISTING_QUERIES += [QueryWrapper()]
@@ -55,11 +54,6 @@ class Materializer:
         db = adbapi.ConnectionPool('psycopg2', host='localhost', 
                     database='archiver', user='archiver', password='password')
         self.data_proc = SmapData(db)
-
-        #self.on_start() # restart anything that was processing when the 
-                        # materializer shutdown last
-
-
 
     def on_start(self):
         for stream in self.EXISTING_STREAMS:
@@ -87,7 +81,6 @@ class Materializer:
     def fetchExistingStreams(self):
         d = getPage(URL_TO_USE, method='POST', postdata=QUERYSTR_TO_USE)
         d.addCallback(self.periodic_check_and_add)
-        # here, need to add polling republish
 
     def periodic_check_and_add(self, stream_list):
         """ Compares against [data structure here] of streams to detect new streams,
@@ -125,13 +118,11 @@ class Materializer:
 
         cons = ProcessedDataConsumer(streams_wrapped, op)
         cons.materializer = self
-        #cons.set_op(op)
         op_app = OperatorApplicator(op_a, d_spec, cons)
         op_app.DATA_DAYS = 100000000000
-        #streamid = fetch_streamid(stream_wrapped.uuid)
-        print(op)
         metas = [getattr(stream, 'metadata') for stream in streams_wrapped]
-        ids = [[getattr(stream, 'uuid'), fetch_streamid(getattr(stream,'uuid'))] for stream in streams_wrapped]
+        ids = [[getattr(stream, 'uuid'), fetch_streamid(getattr(stream,
+                                    'uuid'))] for stream in streams_wrapped]
         op_app.start_processing(((True, metas), (True, ids)))
 
 
@@ -226,7 +217,5 @@ if __name__ == '__main__':
     if REPUBLISH_LISTEN_ON:
         republisher = RepublishListener()
         m.republisher = republisher
-
         threads.deferToThread(republisher.start)
-
     reactor.run()
