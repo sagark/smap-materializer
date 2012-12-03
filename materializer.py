@@ -23,7 +23,7 @@ import json
 import sys
 import readingdb
 import shelve
-
+from ast import literal_eval
 
 # config
 readingdb.db_setup('localhost', 4242)
@@ -152,8 +152,7 @@ class ProcessedDataConsumer(object):
         data, we need to run historical processing on it again, assuming that
         there is a sufficient amount."""
         #self.stream_wrapped.d = self.data
-        data = json.loads(self.data)
-        print(self.op)
+        data = literal_eval(self.data)
         if len(data[0]["Readings"]) != 0:
             # set metadata as necessary
             data[0]['Metadata']['Extra']['Operator'] = self.op.meta_op
