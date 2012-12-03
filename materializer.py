@@ -115,14 +115,19 @@ class Materializer:
         # this will work at least until the year 33658
         d_spec = {'start': start, 'end': 1000000000000000000, 
                                     'limit': [0, 0], 'method': 'data'}
-
+        for stream in streams_wrapped:
+            fetch_res = fetch_streamid(stream.uuid)
+            stream.streamid = fetch_res[0]
+            print("streamid is "  + str(fetch_res[0]))
+            stream.subscription_key = fetch_res[1]
+            print("sub key is " + str(fetch_res[1]))
         cons = ProcessedDataConsumer(streams_wrapped, op)
         cons.materializer = self
         op_app = OperatorApplicator(op_a, d_spec, cons)
         op_app.DATA_DAYS = 100000000000
         metas = [getattr(stream, 'metadata') for stream in streams_wrapped]
-        ids = [[getattr(stream, 'uuid'), fetch_streamid(getattr(stream,
-                                    'uuid'))] for stream in streams_wrapped]
+        ids = [[getattr(stream, 'uuid'), getattr(stream,
+                                    'streamid') ] for stream in streams_wrapped]
         op_app.start_processing(((True, metas), (True, ids)))
 
 
@@ -175,7 +180,7 @@ class ProcessedDataConsumer(object):
             #only update latest processed if something was actually computed
             self.streams_wrapped[0].latest_processed = data[0]["Readings"][-1][0]
             data = dict(((v['Path'], v) for v in data)) 
-            self.materializer.data_proc.add(2, data) #store back to db
+            self.materializer.data_proc.add(self.streams_wrapped[0].subscription_key, data) #store back to db
 
             if self.op.refresh_time is not None and self.op.refresh_time > 0:
                 reactor.callLater(self.op.refresh_time, m.process, self.streams_wrapped, 

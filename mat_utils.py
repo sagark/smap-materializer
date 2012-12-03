@@ -5,5 +5,6 @@ def fetch_streamid(uuid):
                             user="archiver", password="password")
     cur = conn.cursor()
     cur.execute("SELECT * FROM stream where uuid = '" + uuid + "';")
-    return cur.fetchone()[0]
+    a = cur.fetchone()
+    return a
 
